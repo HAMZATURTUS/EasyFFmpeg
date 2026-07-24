@@ -57,6 +57,8 @@
   width: 60%;
   margin: auto;
   justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
   margin-bottom: 10px;
 }
 
@@ -106,12 +108,17 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+button:not(:disabled):hover {
   border-color: #396cd8;
 }
-button:active {
+button:not(:disabled):active {
   border-color: #396cd8;
   background-color: #e8e8e8;
+}
+button:disabled {
+  opacity: 0.6;        
+  cursor: not-allowed;   
+  background-color: #444;
 }
 
 input,

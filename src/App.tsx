@@ -1,22 +1,95 @@
 import { useState } from "react";
 import { open } from '@tauri-apps/plugin-dialog';
 // import reactLogo from "./assets/react.svg";
-// import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
+async function select_file() {
+  const file = await open({
+    multiple: false,
+    directory: false,
+  });
 
-function ConvertPage() {
+  const display = document.getElementById("file-path-display") as HTMLInputElement;
+  if (file && display) {
+    display.value = file;
+  }
+}
 
-  async function select_file() {
-    const file = await open({
-      multiple: false,
-      directory: false,
-    });
+async function select_location() {
+  const file = await open({
+    multiple: false,
+    directory: true,
+  });
 
-    var display = document.getElementById("file-path-display") as HTMLInputElement
-    if (file && display) {
-      display.value = file;
+  const display = document.getElementById("dir-path-display") as HTMLInputElement;
+  if (file && display) {
+    display.value = file;
+  }
+}
+
+interface props {
+  isWorking: boolean;
+  setIsWorking: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+function ConvertPage({ isWorking, setIsWorking }: props) {
+  async function convert_filetype() {
+    if (isWorking) return;
+    setIsWorking(true);
+
+    const fp_display = document.getElementById("file-path-display") as HTMLInputElement;
+    const dp_display = document.getElementById("dir-path-display") as HTMLInputElement;
+    const fn_input = document.getElementById("filename-input") as HTMLInputElement;
+    const select = document.getElementById('fformats') as HTMLSelectElement;
+    const progress = document.getElementById("progress") as HTMLInputElement;
+
+    if (!progress) {
+      setIsWorking(false);
+      return;
     }
+
+    progress.value = "Please wait";
+    if (fp_display && dp_display && fn_input && select) {
+      var original_fp = fp_display.value;
+      var target_dir = dp_display.value;
+      var filename = fn_input.value;
+      var filetype = select.value;
+
+      if (original_fp && target_dir && filename && filetype){
+        if (target_dir[target_dir.length - 1] != '/') target_dir += "/";
+        var target_filepath = target_dir + filename + "." + filetype;
+        try{
+          var ret = await invoke("convert_filetype", {
+            originalFilepath: original_fp, 
+            destFilepath: target_filepath
+          });
+          if (ret == "Success") {
+            progress.value = "Complete!";
+          }
+        }
+        catch (error){
+          progress.value = "Error occured, check console";
+          console.log(error);
+        }
+        finally {
+          setIsWorking(false);
+          return;
+        }
+      }
+      else {
+        progress.value = "Please fill all fields";
+        setIsWorking(false);
+        return;
+      }
+
+    }
+    else {
+      progress.value = "Something went wrong";
+      setIsWorking(false);
+      return;
+    }
+
   }
 
   return (
@@ -27,6 +100,7 @@ function ConvertPage() {
         className="form"
         onSubmit={(e) => {
           e.preventDefault();
+          convert_filetype()
         }}
       >
         <div className="internal-row">
@@ -34,19 +108,34 @@ function ConvertPage() {
           onClick={() => {
             select_file();
           }}
-          className="share-btn" id="open-dialog-btn">Select File</button>
+          type="button" className="share-btn" id="open-dialog-btn">Select File</button>
           <input type="text" className="share-btn" id="file-path-display" readOnly placeholder="No file selected..." />
         </div>
         <div className="internal-row">
           <label>Choose a new format: </label>
-          <select name="fformats" id="fformats">
+          <select name="fformats" id="fformats" defaultValue={"mp3"}>
             <option value="mp4">mp4</option>
             <option value="avi">avi</option>
             <option value="mp3">mp3</option>
             <option value="wav">wav</option>
           </select>
         </div>
-        <button type="submit">Convert</button>
+        <div className="internal-row">
+          <button
+          onClick={() => {
+            select_location();
+          }}
+          type="button" className="share-btn" id="open-dialog-btn">Select Save Location</button>
+          <input type="text" className="share-btn" id="dir-path-display" readOnly placeholder="No folder selected..." />
+        </div>
+        <div className="internal-row">
+          <label>Choose a filename</label>
+          <input type="text" className="share-btn" id="filename-input"/>
+        </div>
+        <button type="submit" disabled={isWorking}>Convert</button>
+        <div className="internal-row">
+          <input type="text" className="share-btn" id="progress" readOnly />
+        </div>
       </form>
     </div>
   );
@@ -76,11 +165,13 @@ function App() {
   // We default to "home".
   const [activeTab, setActiveTab] = useState("home");
 
+  const [isWorking, setIsWorking] = useState(false);
+
   // This helper function looks at the state and returns the correct component
   const renderContent = () => {
     switch (activeTab) {
       case "convert":
-        return <ConvertPage />;
+        return <ConvertPage isWorking={isWorking} setIsWorking={setIsWorking} />
       case "trim":
         return <TrimPage />;
       default:
@@ -94,19 +185,24 @@ function App() {
 
       {/* Navigation Menu */}
       <div className="row">
+        {/*
         <button 
+          disabled={isWorking}
           onClick={() => setActiveTab("home")}
           className={activeTab === "home" ? "active" : ""}
         >
           Home
         </button>
+        */}
         <button 
+          disabled={isWorking}
           onClick={() => setActiveTab("convert")}
           className={activeTab === "convert" ? "active" : ""}
         >
           Convert
         </button>
         <button 
+          disabled={isWorking}
           onClick={() => setActiveTab("trim")}
           className={activeTab === "trim" ? "active" : ""}
         >
