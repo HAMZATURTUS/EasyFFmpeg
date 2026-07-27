@@ -4,17 +4,19 @@
   "version": "0.1.0",
   "identifier": "com.hamzaturtus.easyffmpeg",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "easyffmpeg",
-        "width": 800,
-        "height": 600
+        "title": "EasyFFmpeg",
+        "width": 960,
+        "height": 660,
+        "minWidth": 760,
+        "minHeight": 520
       }
     ],
     "security": {
