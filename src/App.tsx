@@ -1,10 +1,11 @@
-import { act, useState } from "react";
+import { useState } from "react";
 import { open } from '@tauri-apps/plugin-dialog';
 // import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import { DragDropZone } from "./components/DragDropZone";
 import "./App.css";
 
+/*
 const PRESETS = [
   { id: 'mp4-h264', label: 'MP4 — H.264',  format: 'mp4',  codec: 'libx264',    section: 'Video' },
   { id: 'mp4-h265', label: 'MP4 — H.265',  format: 'mp4',  codec: 'libx265',    section: 'Video', badge: '4K' },
@@ -16,6 +17,7 @@ const PRESETS = [
   { id: 'flac',     label: 'FLAC',         format: 'flac', codec: null,         section: 'Audio', badge: 'LL' },
   { id: 'gif',      label: 'GIF',          format: 'gif',  codec: null,         section: 'Other' },
 ] as const;
+*/
 
 const AUDIO_FORMATS = new Set(['mp3', 'aac', 'flac', 'wav', 'opus', 'm4a']);
 
@@ -27,6 +29,8 @@ interface Settings {
   audioCodec: string;
   trimStart: string;
   trimEnd: string;
+  fileName: string;
+  saveLocation: string;
 }
 interface MediaFile {
   id: string;
@@ -58,12 +62,14 @@ function FileRow({ item, toFmt, onRemove, onCancel, onReveal, onRetry }: {
       <div className="file-info">
         <div className="file-name-row">
           <span className="file-name" title={item.name}>{item.name}</span>
-          <div className="fmt-indicator">
-            <span className="fmt-tag">{item.fromFmt}</span>
-            <IcArrow />
-            <span className="fmt-tag to">{toFmt}</span>
+          <div className="status-container">
+            <div className="fmt-indicator">
+              <span className="fmt-tag">{item.fromFmt}</span>
+              <IcArrow />
+              <span className="fmt-tag to">{toFmt}</span>
+            </div>
+            <StatusBadge state={item.state} />
           </div>
-          <StatusBadge state={item.state} />
         </div>
 
         <div className="prog-track">
@@ -118,17 +124,38 @@ function getFileExt(path: string): string {
   return dot > -1 ? path.substring(dot + 1).toUpperCase() : '???';
 }
 
+function getFileNameNoExt(path: string): string {
+  const fileName = path.substring(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
+  const dotIndex = fileName.lastIndexOf('.');
+  if (dotIndex <= 0) {
+    return fileName;
+  }
+  return fileName.substring(0, dotIndex);
+}
+
 export default function App() {
 
   const [activeFile, setActiveFile] = useState<MediaFile | null>(null);
-  const [preset, setPreset] = useState('mp4-h264');
   const [settings, setSettings] = useState<Settings>({
-    format: 'mp4', quality: 'balanced', resolution: 'original',
-    videoCodec: 'libx264', audioCodec: 'aac', trimStart: '', trimEnd: '',
+    format: 'mp4', quality: 'original', resolution: 'original',
+    videoCodec: 'original', audioCodec: 'copy', trimStart: '', trimEnd: '', fileName: 'out', saveLocation: '/',
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [converting, setConverting] = useState(false);
+
+  async function handleSelectSaveLocation() {
+    const folder = await open({
+      multiple: false,
+      directory: true,
+    });
+    if (folder && typeof folder == "string"){
+      if (folder[folder.length - 1] != "/")
+        setSettings(s => ({...s, saveLocation: folder + "/"}));
+      else 
+        setSettings(s => ({...s, saveLocation: folder}));
+    }
+  }
 
   async function selectFile() {
     const file = await open({
@@ -138,7 +165,7 @@ export default function App() {
 
     if (file && typeof file === "string") {
       setActiveFile({ id: "preview", path: file, name: getFileName(file), state: 'queued', fromFmt: getFileExt(file), percent: 0 });
-      
+      setSettings(s => ({...s, fileName: getFileNameNoExt(file)}));
     }
   };
 
@@ -171,16 +198,12 @@ export default function App() {
       fromFmt: getFileExt(path), 
       percent: 0 
     });
+    setSettings(s => ({...s, fileName: getFileNameNoExt(path)}));
   };
 
   const startConvert = () => {
     setConverting(true);
     setTimeout(() => setConverting(false), 2000); // Mocks a 2-second conversion
-  };
-
-  const selectPreset = (p: typeof PRESETS[0]) => {
-    setPreset(p.id);
-    setSettings(s => ({ ...s, format: p.format, videoCodec: p.codec ?? s.videoCodec }));
   };
 
   // ── Render ──
@@ -281,6 +304,7 @@ export default function App() {
                     <select id="qual-sel" className="s-select"
                       value={settings.quality}
                       onChange={e => setSettings(s => ({ ...s, quality: e.target.value }))}>
+                      <option value="original">Original</option>
                       <option value="high">High (visually lossless)</option>
                       <option value="balanced">Balanced</option>
                       <option value="small">Smaller file</option>
@@ -293,11 +317,29 @@ export default function App() {
                       value={settings.resolution}
                       onChange={e => setSettings(s => ({ ...s, resolution: e.target.value }))}>
                       <option value="original">Original</option>
-                      <option value="2160p">4K — 2160p</option>
+                      <option value="2160p">4K</option>
                       <option value="1080p">1080p</option>
                       <option value="720p">720p</option>
                       <option value="480p">480p</option>
                     </select>
+                  </div>
+
+                  <div className="setting-group">
+                    <label className="setting-label" htmlFor="res-sel">Save Location</label>
+                    <input readOnly id="save-location" className="s-input"
+                    value={settings.saveLocation || "Default Folder"}
+                    onClick={handleSelectSaveLocation}
+                    title={settings.saveLocation}
+                    style={{width: "20vw"}}/>
+                  </div>
+
+                  <div className="setting-group">
+                    <label className="setting-label" htmlFor="res-sel">File Name</label>
+                    <input id="file-name" className="s-input"
+                    value={settings.fileName || "Default Folder"}
+                    title={settings.fileName}
+                    onChange={e => setSettings(s => ({ ...s, fileName: e.target.value }))}
+                    style={{width: "20vw"}}/>
                   </div>
 
                   <button
@@ -316,6 +358,7 @@ export default function App() {
                       <select id="codec-sel" className="s-select"
                         value={settings.videoCodec}
                         onChange={e => setSettings(s => ({ ...s, videoCodec: e.target.value }))}>
+                        <option value="original">Original</option>
                         <option value="libx264">H.264 (libx264)</option>
                         <option value="libx265">H.265 (libx265)</option>
                         <option value="libvpx-vp9">VP9 (libvpx-vp9)</option>
@@ -338,7 +381,7 @@ export default function App() {
                     <div className="setting-group">
                       <label className="setting-label" htmlFor="audio-sel">Audio</label>
                       <select id="audio-sel" className="s-select"
-                        value={settings.audioCodec}
+                        value="copy"
                         onChange={e => setSettings(s => ({ ...s, audioCodec: e.target.value }))}>
                         <option value="aac">AAC 192k</option>
                         <option value="mp3">MP3 320k</option>

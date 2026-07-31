@@ -170,29 +170,49 @@ h1 {
 /* ── File Row ── */
 @keyframes row-in { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
 .file-row {
-  display: grid; grid-template-columns: 40px 1fr auto; gap: var(--sp-3); align-items: center;
-  background: var(--surface); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4);
-  border: 1px solid transparent; transition: background .1s, border-color .15s;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-4);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 5rem;
+  border: 1px solid var(--surface); 
+  transition: background .1s, border-color .15s;
   animation: row-in .18s ease both;
+  height: 100%;
+  width: 100%;
+  text-align: center;
 }
-.file-row:hover { background: var(--surface-raised); }
 .file-row.state-error { background: var(--destr-dim); border-color: rgba(255,69,58,.22); }
 .file-row.state-error:hover { background: rgba(255,69,58,.14); }
 .file-row.state-done  { border-color: rgba(247,107,21,.2); }
 
-.thumb {
-  width: 40px; height: 40px; border-radius: var(--radius-sm);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+.file-row .thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
+
+.file-row .thumb svg {
+  width: 24px;
+  height: 24px;
+}
+
 .thumb.t-video { background: rgba(10,132,255,.14); color: #3B9EFF; }
 .thumb.t-audio { background: rgba(255,159,10,.14);  color: #FF9F0A; }
 
-.file-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.file-name-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; row-gap: 4px; }
+.file-info { width: 100%; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.file-name-row { display: flex; flex-direction: column; align-items: center; gap: var(--sp-5); flex-wrap: wrap; row-gap: 4px; }
 .file-name {
   font-size: 13px; font-weight: 500; color: var(--text-primary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80%;
 }
+.status-container {display: flex; justify-content: space-between; gap: 60%;}
 .fmt-indicator { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .fmt-tag {
   font-size: 10px; font-weight: 700; letter-spacing: .04em;
@@ -222,6 +242,7 @@ h1 {
   background: #3B9EFF; margin-right: 4px; vertical-align: middle;
   animation: conv-pulse 1.35s ease infinite;
 }
+
 
 .file-actions { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
 
