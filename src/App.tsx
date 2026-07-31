@@ -1,24 +1,9 @@
 import { useState } from "react";
 import { open } from '@tauri-apps/plugin-dialog';
-// import reactLogo from "./assets/react.svg";
+
 import { invoke } from "@tauri-apps/api/core";
 import { DragDropZone } from "./components/DragDropZone";
 import "./App.css";
-
-/*
-const PRESETS = [
-  { id: 'mp4-h264', label: 'MP4 — H.264',  format: 'mp4',  codec: 'libx264',    section: 'Video' },
-  { id: 'mp4-h265', label: 'MP4 — H.265',  format: 'mp4',  codec: 'libx265',    section: 'Video', badge: '4K' },
-  { id: 'webm-vp9', label: 'WebM — VP9',   format: 'webm', codec: 'libvpx-vp9', section: 'Video' },
-  { id: 'prores',   label: 'ProRes 422',   format: 'mov',  codec: 'prores_ks',  section: 'Video', badge: 'Pro' },
-  { id: 'mkv-av1',  label: 'MKV — AV1',    format: 'mkv',  codec: 'libaom-av1', section: 'Video', badge: 'New' },
-  { id: 'mp3',      label: 'MP3',          format: 'mp3',  codec: null,         section: 'Audio' },
-  { id: 'aac',      label: 'AAC',          format: 'aac',  codec: null,         section: 'Audio' },
-  { id: 'flac',     label: 'FLAC',         format: 'flac', codec: null,         section: 'Audio', badge: 'LL' },
-  { id: 'gif',      label: 'GIF',          format: 'gif',  codec: null,         section: 'Other' },
-] as const;
-*/
-
 const AUDIO_FORMATS = new Set(['mp3', 'aac', 'flac', 'wav', 'opus', 'm4a']);
 
 interface Settings {
@@ -40,7 +25,6 @@ interface MediaFile {
   state: 'queued' | 'converting' | 'done' | 'error';
   percent: number;
   error?: string;
-  outputPath?: string;
 }
 
 function FileRow({ item, toFmt, onRemove, onCancel, onReveal, onRetry }: {
@@ -142,7 +126,6 @@ export default function App() {
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [converting, setConverting] = useState(false);
 
   async function handleSelectSaveLocation() {
     const folder = await open({
@@ -170,20 +153,16 @@ export default function App() {
   };
 
   const retryFile = () => {
-    if (activeFile) {
-      activeFile.state = "queued";
-      activeFile.percent = 0;
-      activeFile.error = undefined;
-    }
+    startConvert();
   }
   
   const removeFile = () => {
     setActiveFile(null);
   };
 
-  const cancelFile = async (id: string) => {
-    await invoke('cancel_conversion', { id });
-    if (activeFile) activeFile.state = "queued";
+  const cancelFile = async () => {
+    await invoke('cancel_conversion', {});
+    setActiveFile(prev => prev ? { ...prev, state: 'queued', percent: 0 } : null);
   };
 
   const revealFile = (outputPath: string) =>
@@ -201,39 +180,32 @@ export default function App() {
     setSettings(s => ({...s, fileName: getFileNameNoExt(path)}));
   };
 
-  const startConvert = () => {
-    setConverting(true);
-    setTimeout(() => setConverting(false), 2000); // Mocks a 2-second conversion
+  const startConvert = async () => {
+    setActiveFile(prev => prev ? { ...prev, state: 'converting', percent: 0 } : null);
+    var display = document.getElementById('status-display') as HTMLLabelElement;
+    display.textContent = "Please wait";
+    if (activeFile && settings){
+      var out = settings.saveLocation + settings.fileName + settings.format;
+      try {
+        await invoke ('convert_file', {
+          inputPath: activeFile.path,
+          outputPath: out,
+        })
+      }
+      catch (e) {
+        display.textContent = "Error occurred, check console";
+        console.log (e);
+      }
+    }
+    else {
+      display.textContent = "Please fill all fields and check a file is uploaded";
+    }
   };
 
   // ── Render ──
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="app-body">
-
-        {/* ── Sidebar ── 
-        <aside className="sidebar">
-          {sections.map(section => (
-            <div key={section}>
-              <div className="sidebar-label">{section}</div>
-              {PRESETS.filter(p => p.section === section).map(p => (
-                <button
-                  key={p.id}
-                  className={`preset-item${preset === p.id ? ' active' : ''}`}
-                  onClick={() => selectPreset(p)}
-                >
-                  {section === 'Video' && <IcVideo />}
-                  {section === 'Audio' && <IcAudio />}
-                  {section === 'Other' && <IcImage />}
-                  <span>{p.label}</span>
-                  {'badge' in p && <span className="preset-badge">{(p as any).badge}</span>}
-                </button>
-              ))}
-              {section !== 'Other' && <div className="sidebar-divider" />}
-            </div>
-          ))}
-        </aside>
-        */}
 
         {/* ── Main pane ── */}
         <main className="main-pane">
@@ -278,8 +250,8 @@ export default function App() {
                     toFmt={settings.format.toUpperCase()}
                     onRemove={() => removeFile()}
                     onRetry={() => retryFile()}
-                    onCancel={() => cancelFile(activeFile.id)}
-                    onReveal={() => activeFile.outputPath && revealFile(activeFile.outputPath)}
+                    onCancel={() => cancelFile()}
+                    onReveal={() => settings.saveLocation && revealFile(settings.saveLocation)}
                 />
                 )}
               </div>
@@ -392,11 +364,15 @@ export default function App() {
                 )}
 
                 <div className="settings-footer">
-                  <button className="btn-primary"
-                    disabled={converting || !activeFile}
+                  <button className="btn-primary" id="convert-btn"
+                    disabled={activeFile.state == 'converting' || !activeFile}
                     onClick={startConvert}>
-                    <IcPlay /> {converting ? "Converting..." : "Convert"}
+                    <IcPlay /> {activeFile.state == 'converting' ? "Converting..." : "Convert"}
                   </button>
+                  <label className="setting-label" id="status-display"
+                  style={{color: "red"}}
+                  >
+                  </label>
                 </div>
               </div>
 
@@ -407,111 +383,6 @@ export default function App() {
     </div>
   );
 }
-
-/*
-function App() {
-  // This state tracks which tool the user wants to see. 
-  // We default to "home".
-  const [activeTab, setActiveTab] = useState("home");
-
-  const [isWorking, setIsWorking] = useState(false);
-
-  // This helper function looks at the state and returns the correct component
-  const renderContent = () => {
-    switch (activeTab) {
-      case "convert":
-        return <ConvertPage isWorking={isWorking} setIsWorking={setIsWorking} />
-      case "trim":
-        return <TrimPage />;
-      default:
-        return <HomePage />;
-    }
-  };
-
-  return (
-    <main className="container">
-      <h1>Video Toolkit</h1>
-
-      <div className="row">
-        
-        <button 
-          disabled={isWorking}
-          onClick={() => setActiveTab("home")}
-          className={activeTab === "home" ? "active" : ""}
-        >
-          Home
-        </button>
-        
-        <button 
-          disabled={isWorking}
-          onClick={() => setActiveTab("convert")}
-          className={activeTab === "convert" ? "active" : ""}
-        >
-          Convert
-        </button>
-        <button 
-          disabled={isWorking}
-          onClick={() => setActiveTab("trim")}
-          className={activeTab === "trim" ? "active" : ""}
-        >
-          Trim
-        </button>
-      </div>
-
-      <div className="content-area">
-        {renderContent()}
-      </div>
-
-    </main>
-  );
-}
-*/
-/*
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
-}
-*/
 
 
 function StatusBadge({ state }: { state: MediaFile['state'] }) {
