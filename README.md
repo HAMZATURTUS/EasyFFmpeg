@@ -6,7 +6,7 @@ EasyFFmpeg is an app that can assemble and run FFmpeg commands for you while pro
 
 Ensure you have FFmpeg and FFprobe installed
 
-Find the AppImage [here](src-tauri/target/release/bundle/deb/easyffmpeg_0.1.0_amd64/data/usr/bin)
+Find the AppImage [here](https://github.com/HAMZATURTUS/EasyFFmpeg/releases/tag/v0.1)
 
 ## How to use (developer)
 
