@@ -1,5 +1,8 @@
-use std::process::Command;
+use std::process::{Command, Child};
 use tauri::{AppHandle, Emitter};
+use std::sync::Mutex;
+
+static FFMPEG_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -24,20 +27,102 @@ async fn convert_filetype(original_filepath: String, dest_filepath: String) -> R
     }
 }
 
+// Get the duration of a file in seconds using ffprobe.
+#[tauri::command]
+fn probe_file(path: String) -> Result<f64, String> {
+    let output = Command::new("ffprobe")
+        .args(["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", &path])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| "Could not read duration. File may not be a supported media format.".to_string())
+}
+
 #[tauri::command]
 async fn convert_file(
     app: AppHandle,
     input_path: String,
-    output_path: String
-) -> String {
-    return "Success".to_string();
+    output_path: String,
+    duration: f64,
+    trim_start: String,
+    trim_end: String,
+    quality: String,
+    video_codec: String,
+    audio_codec: String
+) -> Result<String, String> {
+
+    let mut cmd = Command::new("ffmpeg");
+    cmd.arg("-y")
+    .arg("-loglevel")
+    .arg("error");
+
+    if !trim_start.is_empty() {
+        cmd.arg("-ss").arg(trim_start);
+    }
+    if !trim_end.is_empty() {
+        cmd.arg("-to").arg(trim_end);
+    }
+    cmd.arg("-i").arg(&input_path);
+
+    cmd.arg(&output_path);
+
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    *FFMPEG_PROCESS.lock().unwrap() = Some(child);
+
+    loop {
+        let process_status = {
+            let mut process_guard = FFMPEG_PROCESS.lock().unwrap();
+            
+            if let Some(child_process) = process_guard.as_mut() {
+                match child_process.try_wait() {
+                    Ok(Some(status)) => {
+                        *process_guard = None;
+                        if status.success() {
+                            Ok(Some("Success".to_string()))
+                        } else {
+                            Err("FFmpeg Failed".to_string())
+                        }
+                    }
+                    Ok(None) => Ok(None),
+                    Err(e) => {
+                        *process_guard = None;
+                        Err(e.to_string())
+                    }
+                }
+            } else {
+                Err("Cancelled by user".to_string())
+            }
+        };
+
+        
+        match process_status {
+            Ok(Some(success_msg)) => return Ok(success_msg),
+            Err(error_msg) => return Err(error_msg),
+            Ok(None) => {
+                // Progress here
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+#[tauri::command]
+async fn cancel_conversion() -> () {
+    let mut process_guard = FFMPEG_PROCESS.lock().unwrap();
+    
+    if let Some(mut child) = process_guard.take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 #[tauri::command]
 fn reveal_in_folder(path: String) -> Result<(), String> {
     let parent = std::path::Path::new(&path)
-        .parent()
-        .ok_or("Could not find the parent folder.")?
         .to_string_lossy()
         .to_string();
 
@@ -55,6 +140,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![   greet,
                                                     convert_filetype,
                                                     convert_file,
+                                                    cancel_conversion,
+                                                    probe_file,
                                                     reveal_in_folder
                                                     ])
         .run(tauri::generate_context!())

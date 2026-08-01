@@ -21,10 +21,29 @@ interface MediaFile {
   id: string;
   path: string;
   name: string;
+  duration: number;
+  isAudio: boolean;
   fromFmt: string;
   state: 'queued' | 'converting' | 'done' | 'error';
   percent: number;
   error?: string;
+}
+
+function toStringDuration(seconds: number): string {
+  if (isNaN(seconds) || seconds < 0) return "00:00:00.000";
+
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const ms = Math.round((seconds % 1) * 1000);
+
+  
+  const paddedHours = String(hours).padStart(2, '0');
+  const paddedMins = String(mins).padStart(2, '0');
+  const paddedSecs = String(secs).padStart(2, '0');
+  const paddedMs = String(ms).padStart(3, '0');
+
+  return `${paddedHours}:${paddedMins}:${paddedSecs}.${paddedMs}`;
 }
 
 function FileRow({ item, toFmt, onRemove, onCancel, onReveal, onRetry }: {
@@ -35,7 +54,8 @@ function FileRow({ item, toFmt, onRemove, onCancel, onReveal, onRetry }: {
     onCancel: () => void;
     onReveal: () => void;
   }) {
-  const isAudio = AUDIO_FORMATS.has(item.fromFmt.toLowerCase());
+  //const isAudio = AUDIO_FORMATS.has(item.fromFmt.toLowerCase());
+  const isAudio = item.isAudio;
 
   return (
     <div className={`file-row state-${item.state}`}>
@@ -46,6 +66,7 @@ function FileRow({ item, toFmt, onRemove, onCancel, onReveal, onRetry }: {
       <div className="file-info">
         <div className="file-name-row">
           <span className="file-name" title={item.name}>{item.name}</span>
+          <span className="file-name" title={String(item.duration)}>Duration: {toStringDuration(item.duration)}</span>
           <div className="status-container">
             <div className="fmt-indicator">
               <span className="fmt-tag">{item.fromFmt}</span>
@@ -121,8 +142,8 @@ export default function App() {
 
   const [activeFile, setActiveFile] = useState<MediaFile | null>(null);
   const [settings, setSettings] = useState<Settings>({
-    format: 'mp4', quality: 'original', resolution: 'original',
-    videoCodec: 'original', audioCodec: 'copy', trimStart: '', trimEnd: '', fileName: 'out', saveLocation: '/',
+    format: 'mp4', quality: '', resolution: '',
+    videoCodec: '', audioCodec: '', trimStart: '', trimEnd: '', fileName: 'out', saveLocation: '/',
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -146,10 +167,8 @@ export default function App() {
       directory: false,
     });
 
-    if (file && typeof file === "string") {
-      setActiveFile({ id: "preview", path: file, name: getFileName(file), state: 'queued', fromFmt: getFileExt(file), percent: 0 });
-      setSettings(s => ({...s, fileName: getFileNameNoExt(file)}));
-    }
+    if (file)
+      handleFileLoaded(file);
   };
 
   const retryFile = () => {
@@ -165,40 +184,69 @@ export default function App() {
     setActiveFile(prev => prev ? { ...prev, state: 'queued', percent: 0 } : null);
   };
 
-  const revealFile = (outputPath: string) =>
+  const revealFile = (outputPath: string) => {
+    console.log(outputPath);
     invoke('reveal_in_folder', { path: outputPath });
+  }
 
-  const handleFileLoaded = (path: string) => {
+  const handleFileLoaded = async (path: string) => {
+    var duration;
+    try {
+      duration = await invoke<number>('probe_file', { path });
+    } 
+    catch (e) {
+      console.log("failed to get duration, invalid file maybe?");
+      return;
+    }
     setActiveFile({ 
       id: "preview", 
       path: path, 
       name: getFileName(path), 
       state: 'queued', 
+      duration: duration,
+      isAudio: AUDIO_FORMATS.has(getFileExt(path).toLowerCase()),
       fromFmt: getFileExt(path), 
       percent: 0 
     });
-    setSettings(s => ({...s, fileName: getFileNameNoExt(path)}));
+
+    setSettings({
+      format: activeFile?.isAudio ? 'mp3' : 'mp4', quality: '', resolution: '',
+      videoCodec: '', audioCodec: '', trimStart: '', trimEnd: '', fileName: getFileNameNoExt(path), saveLocation: '/',
+    });
   };
 
   const startConvert = async () => {
     setActiveFile(prev => prev ? { ...prev, state: 'converting', percent: 0 } : null);
     var display = document.getElementById('status-display') as HTMLLabelElement;
-    display.textContent = "Please wait";
+    display.textContent = "Conversion in progress";
     if (activeFile && settings){
-      var out = settings.saveLocation + settings.fileName + settings.format;
+      var out = settings.saveLocation + settings.fileName + "." + settings.format;
+      console.log(out);
       try {
         await invoke ('convert_file', {
           inputPath: activeFile.path,
           outputPath: out,
-        })
+          duration: activeFile.duration,
+          trimStart: settings.trimStart,
+          trimEnd: settings.trimEnd,
+          quality: settings.quality,
+          videoCodec: settings.videoCodec,
+          audioCodec: settings.audioCodec
+        });
+        display.textContent = "";
+        setActiveFile(prev => prev ? { ...prev, state: 'done', percent: 0 } : null);
       }
       catch (e) {
         display.textContent = "Error occurred, check console";
         console.log (e);
+        setActiveFile(prev => prev ? { ...prev, state: 'error', percent: 0 } : null);
+        return;
       }
     }
     else {
-      display.textContent = "Please fill all fields and check a file is uploaded";
+      setActiveFile(prev => prev ? { ...prev, state: 'queued', percent: 0 } : null);
+      display.textContent = "Please fill all fields";
+      return;
     }
   };
 
@@ -265,7 +313,10 @@ export default function App() {
                     <select id="fmt-sel" className="s-select"
                       value={settings.format}
                       onChange={e => setSettings(s => ({ ...s, format: e.target.value }))}>
-                      {['mp4', 'mov', 'webm', 'mkv', 'mp3', 'aac', 'flac', 'gif'].map(f => (
+                      {(activeFile.isAudio 
+                        ? ['mp3', 'aac', 'flac', 'wav'] 
+                        : ['mp4', 'mov', 'webm', 'mkv', 'mp3', 'aac', 'flac', 'wav', 'gif']
+                      ).map(f => (
                         <option key={f} value={f}>{f.toUpperCase()}</option>
                       ))}
                     </select>
@@ -276,25 +327,26 @@ export default function App() {
                     <select id="qual-sel" className="s-select"
                       value={settings.quality}
                       onChange={e => setSettings(s => ({ ...s, quality: e.target.value }))}>
-                      <option value="original">Original</option>
+                      <option value="">Original</option>
                       <option value="high">High (visually lossless)</option>
                       <option value="balanced">Balanced</option>
                       <option value="small">Smaller file</option>
                     </select>
                   </div>
-
+                  {!activeFile.isAudio && (
                   <div className="setting-group">
                     <label className="setting-label" htmlFor="res-sel">Resolution</label>
                     <select id="res-sel" className="s-select"
                       value={settings.resolution}
                       onChange={e => setSettings(s => ({ ...s, resolution: e.target.value }))}>
-                      <option value="original">Original</option>
+                      <option value="">Original</option>
                       <option value="2160p">4K</option>
                       <option value="1080p">1080p</option>
                       <option value="720p">720p</option>
                       <option value="480p">480p</option>
                     </select>
                   </div>
+                  )}
 
                   <div className="setting-group">
                     <label className="setting-label" htmlFor="res-sel">Save Location</label>
@@ -325,12 +377,13 @@ export default function App() {
 
                 {showAdvanced && (
                   <div className="adv-row">
+                    {!activeFile.isAudio && (
                     <div className="setting-group">
                       <label className="setting-label" htmlFor="codec-sel">Video Codec</label>
                       <select id="codec-sel" className="s-select"
                         value={settings.videoCodec}
                         onChange={e => setSettings(s => ({ ...s, videoCodec: e.target.value }))}>
-                        <option value="original">Original</option>
+                        <option value="">Original</option>
                         <option value="libx264">H.264 (libx264)</option>
                         <option value="libx265">H.265 (libx265)</option>
                         <option value="libvpx-vp9">VP9 (libvpx-vp9)</option>
@@ -338,26 +391,27 @@ export default function App() {
                         <option value="prores_ks">ProRes 422</option>
                       </select>
                     </div>
+                    )}
                     <div className="setting-group">
                       <label className="setting-label" htmlFor="trim-s">Trim Start</label>
-                      <input id="trim-s" className="s-input" type="text" placeholder="0:00:00"
+                      <input id="trim-s" className="s-input" type="text" placeholder="HH:MM:SS.mmm"
                         value={settings.trimStart}
                         onChange={e => setSettings(s => ({ ...s, trimStart: e.target.value }))} />
                     </div>
                     <div className="setting-group">
                       <label className="setting-label" htmlFor="trim-e">Trim End</label>
-                      <input id="trim-e" className="s-input" type="text" placeholder="0:00:00"
+                      <input id="trim-e" className="s-input" type="text" placeholder="HH:MM:SS.mmm"
                         value={settings.trimEnd}
                         onChange={e => setSettings(s => ({ ...s, trimEnd: e.target.value }))} />
                     </div>
                     <div className="setting-group">
                       <label className="setting-label" htmlFor="audio-sel">Audio</label>
                       <select id="audio-sel" className="s-select"
-                        value="copy"
+                        value={settings.audioCodec}
                         onChange={e => setSettings(s => ({ ...s, audioCodec: e.target.value }))}>
                         <option value="aac">AAC 192k</option>
                         <option value="mp3">MP3 320k</option>
-                        <option value="copy">Copy (no re-encode)</option>
+                        <option value="">Copy (no re-encode)</option>
                       </select>
                     </div>
                   </div>
