@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Child, Stdio};
 use tauri::{AppHandle, Emitter};
 use std::sync::Mutex;
@@ -61,7 +61,8 @@ async fn convert_file(
     .arg("-loglevel")
     .arg("error")
     .arg("-progress").arg("pipe:1")
-    .stdout(Stdio::piped());
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
 
 
     if !trim_start.is_empty() {
@@ -89,6 +90,14 @@ async fn convert_file(
 
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
 
+    // error message receiver
+    let stderr = child.stderr.take().unwrap();
+    let mut stderr_thread = Some(std::thread::spawn(move || {
+        let mut s = String::new();
+        BufReader::new(stderr).read_to_string(&mut s).ok();
+        s
+    }));
+    
     // progress tracker (allegedly)
     if let Some(stdout) = child.stdout.take() {
         let app_clone = app.clone();
@@ -120,7 +129,18 @@ async fn convert_file(
                         if status.success() {
                             Ok(Some("Success".to_string()))
                         } else {
-                            Err("FFmpeg Failed".to_string())
+                            let error_msg = stderr_thread
+                                .take()
+                                .and_then(|t| t.join().ok())
+                                .unwrap_or_default();
+                            
+                            let msg = error_msg
+                                .lines()
+                                .filter(|l| !l.trim().is_empty())
+                                .last()
+                                .unwrap_or("FFmpeg failed. Make sure the input file is valid and FFmpeg is installed.")
+                                .to_string();
+                            Err(msg)
                         }
                     }
                     Ok(None) => Ok(None),

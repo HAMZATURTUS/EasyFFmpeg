@@ -237,7 +237,7 @@ export default function App() {
     setActiveFile(prev => prev ? { ...prev, state: 'converting', percent: 0 } : null);
     var display = document.getElementById('status-display') as HTMLLabelElement;
     display.textContent = "Conversion in progress";
-    if (activeFile && settings){
+    if (activeFile && settings && settings.fileName.length != 0){
       var out = settings.saveLocation + settings.fileName + "." + settings.format;
       var quality = "";
       if (settings.quality == "high") quality = "18";
@@ -263,16 +263,16 @@ export default function App() {
           display.textContent = "Conversion cancelled";
         }
         else {
-          display.textContent = "Error occurred, check console";
-          console.log (e);
+          display.textContent = "Error: " + e;
+          //console.log (e);
         }
         setActiveFile(prev => prev ? { ...prev, state: 'error', percent: 0 } : null);
         return;
       }
     }
     else {
-      setActiveFile(prev => prev ? { ...prev, state: 'queued', percent: 0 } : null);
-      display.textContent = "Please fill all fields";
+      setActiveFile(prev => prev ? { ...prev, state: 'error', percent: 0 } : null);
+      display.textContent = "Please choose a file name";
       return;
     }
   };
@@ -378,7 +378,7 @@ export default function App() {
                   <div className="setting-group">
                     <label className="setting-label" htmlFor="res-sel">Save Location</label>
                     <input readOnly id="save-location" className="s-input"
-                    value={settings.saveLocation || "Default Folder"}
+                    value={settings.saveLocation || "/"}
                     onClick={handleSelectSaveLocation}
                     title={settings.saveLocation}
                     style={{width: "20vw"}}/>
@@ -387,7 +387,7 @@ export default function App() {
                   <div className="setting-group">
                     <label className="setting-label" htmlFor="res-sel">File Name</label>
                     <input id="file-name" className="s-input"
-                    value={settings.fileName || "Default Folder"}
+                    value={settings.fileName}
                     title={settings.fileName}
                     onChange={e => setSettings(s => ({ ...s, fileName: e.target.value }))}
                     style={{width: "20vw"}}/>
