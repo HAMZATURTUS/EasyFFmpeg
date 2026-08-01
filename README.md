@@ -2,7 +2,7 @@
 
 EasyFFmpeg is an app that can assemble and run FFmpeg commands for you while providing an easy to use interface
 
-## How to use (use)
+## How to use (user)
 
 Ensure you have FFmpeg and FFprobe installed
 
