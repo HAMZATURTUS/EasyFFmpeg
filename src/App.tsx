@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { open } from '@tauri-apps/plugin-dialog';
-
+import { listen } from '@tauri-apps/api/event';
 import { invoke } from "@tauri-apps/api/core";
+
 import { DragDropZone } from "./components/DragDropZone";
 import "./App.css";
 const AUDIO_FORMATS = new Set(['mp3', 'aac', 'flac', 'wav', 'opus', 'm4a']);
@@ -148,6 +149,15 @@ export default function App() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<number>('conversion-progress', (e) => {
+      console.log(e.payload);
+      setActiveFile(prev => prev ? { ...prev, percent: e.payload } : null);
+    }).then(fn => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
   async function handleSelectSaveLocation() {
     const folder = await open({
       multiple: false,
@@ -198,20 +208,28 @@ export default function App() {
       console.log("failed to get duration, invalid file maybe?");
       return;
     }
+    const isAudio = AUDIO_FORMATS.has(getFileExt(path).toLowerCase());
     setActiveFile({ 
       id: "preview", 
       path: path, 
       name: getFileName(path), 
       state: 'queued', 
       duration: duration,
-      isAudio: AUDIO_FORMATS.has(getFileExt(path).toLowerCase()),
+      isAudio: isAudio,
       fromFmt: getFileExt(path), 
       percent: 0 
     });
 
     setSettings({
-      format: activeFile?.isAudio ? 'mp3' : 'mp4', quality: '', resolution: '',
-      videoCodec: '', audioCodec: '', trimStart: '', trimEnd: '', fileName: getFileNameNoExt(path), saveLocation: '/',
+      format: isAudio ? 'mp3' : 'mp4', 
+      quality: '', 
+      resolution: '',
+      videoCodec: '', 
+      audioCodec: '', 
+      trimStart: '', 
+      trimEnd: '', 
+      fileName: getFileNameNoExt(path), 
+      saveLocation: '/'
     });
   };
 
@@ -221,7 +239,10 @@ export default function App() {
     display.textContent = "Conversion in progress";
     if (activeFile && settings){
       var out = settings.saveLocation + settings.fileName + "." + settings.format;
-      console.log(out);
+      var quality = "";
+      if (settings.quality == "high") quality = "18";
+      else if (settings.quality == "balanced") quality = "23";
+      else if (settings.quality == "low") quality = "28";
       try {
         await invoke ('convert_file', {
           inputPath: activeFile.path,
@@ -229,16 +250,22 @@ export default function App() {
           duration: activeFile.duration,
           trimStart: settings.trimStart,
           trimEnd: settings.trimEnd,
-          quality: settings.quality,
+          quality: quality,
+          resolution: settings.resolution,
           videoCodec: settings.videoCodec,
           audioCodec: settings.audioCodec
         });
         display.textContent = "";
-        setActiveFile(prev => prev ? { ...prev, state: 'done', percent: 0 } : null);
+        setActiveFile(prev => prev ? { ...prev, state: 'done', percent: 100 } : null);
       }
       catch (e) {
-        display.textContent = "Error occurred, check console";
-        console.log (e);
+        if (e === "Cancelled") {
+          display.textContent = "Conversion cancelled";
+        }
+        else {
+          display.textContent = "Error occurred, check console";
+          console.log (e);
+        }
         setActiveFile(prev => prev ? { ...prev, state: 'error', percent: 0 } : null);
         return;
       }
@@ -330,7 +357,7 @@ export default function App() {
                       <option value="">Original</option>
                       <option value="high">High (visually lossless)</option>
                       <option value="balanced">Balanced</option>
-                      <option value="small">Smaller file</option>
+                      <option value="low">Low</option>
                     </select>
                   </div>
                   {!activeFile.isAudio && (
@@ -340,10 +367,10 @@ export default function App() {
                       value={settings.resolution}
                       onChange={e => setSettings(s => ({ ...s, resolution: e.target.value }))}>
                       <option value="">Original</option>
-                      <option value="2160p">4K</option>
-                      <option value="1080p">1080p</option>
-                      <option value="720p">720p</option>
-                      <option value="480p">480p</option>
+                      <option value="2160">4K</option>
+                      <option value="1080">1080p</option>
+                      <option value="720">720p</option>
+                      <option value="480">480p</option>
                     </select>
                   </div>
                   )}
@@ -383,7 +410,7 @@ export default function App() {
                       <select id="codec-sel" className="s-select"
                         value={settings.videoCodec}
                         onChange={e => setSettings(s => ({ ...s, videoCodec: e.target.value }))}>
-                        <option value="">Original</option>
+                        <option value="">No Encoding</option>
                         <option value="libx264">H.264 (libx264)</option>
                         <option value="libx265">H.265 (libx265)</option>
                         <option value="libvpx-vp9">VP9 (libvpx-vp9)</option>

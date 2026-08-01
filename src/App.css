@@ -186,8 +186,7 @@ h1 {
   text-align: center;
 }
 .file-row.state-error { background: var(--destr-dim); border-color: rgba(255,69,58,.22); }
-.file-row.state-error:hover { background: rgba(255,69,58,.14); }
-.file-row.state-done  { border-color: rgba(247,107,21,.2); }
+.file-row.state-done  { background: rgba(167, 92, 0, 0.218); border-color: rgba(247,107,21,.2); }
 
 .file-row .thumb {
   width: 64px;

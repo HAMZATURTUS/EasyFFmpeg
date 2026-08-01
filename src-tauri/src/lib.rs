@@ -1,4 +1,5 @@
-use std::process::{Command, Child};
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Child, Stdio};
 use tauri::{AppHandle, Emitter};
 use std::sync::Mutex;
 
@@ -50,6 +51,7 @@ async fn convert_file(
     trim_start: String,
     trim_end: String,
     quality: String,
+    resolution: String,
     video_codec: String,
     audio_codec: String
 ) -> Result<String, String> {
@@ -57,7 +59,10 @@ async fn convert_file(
     let mut cmd = Command::new("ffmpeg");
     cmd.arg("-y")
     .arg("-loglevel")
-    .arg("error");
+    .arg("error")
+    .arg("-progress").arg("pipe:1")
+    .stdout(Stdio::piped());
+
 
     if !trim_start.is_empty() {
         cmd.arg("-ss").arg(trim_start);
@@ -67,9 +72,40 @@ async fn convert_file(
     }
     cmd.arg("-i").arg(&input_path);
 
+    if !quality.is_empty() {
+        cmd.arg("-crf").arg(quality);
+    }
+    if !resolution.is_empty() {
+        cmd.arg("-vf").arg(format!("scale=-2:{}", resolution));
+    }
+    if !audio_codec.is_empty() {
+        cmd.arg("-c:a").arg(audio_codec);
+    }
+    if !video_codec.is_empty() {
+        cmd.arg("-c:v").arg(video_codec);
+    }
+
     cmd.arg(&output_path);
 
-    let child = cmd.spawn().map_err(|e| e.to_string())?;
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    // progress tracker (allegedly)
+    if let Some(stdout) = child.stdout.take() {
+        let app_clone = app.clone();
+        
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let line = line.unwrap_or_default();
+                if line.starts_with("out_time_us=") {
+                    let us: f64 = line["out_time_us=".len()..].parse().unwrap_or(0.0);
+                    if duration > 0.0 {
+                        let percent = (us / 1_000_000.0 / duration * 100.0).min(99.0);
+                        let _ = app_clone.emit("conversion-progress", percent);
+                    }
+                }
+            }
+        });
+    }
 
     *FFMPEG_PROCESS.lock().unwrap() = Some(child);
 
@@ -94,7 +130,7 @@ async fn convert_file(
                     }
                 }
             } else {
-                Err("Cancelled by user".to_string())
+                Err("Cancelled".to_string())
             }
         };
 
@@ -102,9 +138,7 @@ async fn convert_file(
         match process_status {
             Ok(Some(success_msg)) => return Ok(success_msg),
             Err(error_msg) => return Err(error_msg),
-            Ok(None) => {
-                // Progress here
-            }
+            Ok(None) => {}
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
@@ -113,9 +147,10 @@ async fn convert_file(
 #[tauri::command]
 async fn cancel_conversion() -> () {
     let mut process_guard = FFMPEG_PROCESS.lock().unwrap();
-    
+
     if let Some(mut child) = process_guard.take() {
-        let _ = child.kill();
+        let pid = child.id();
+        let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
         let _ = child.wait();
     }
 }
