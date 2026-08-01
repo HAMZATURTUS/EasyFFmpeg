@@ -1,7 +1,15 @@
-# Tauri + React + Typescript
+# EasyFFmpeg
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+EasyFFmpeg is an app that can assemble and run FFmpeg commands for you while providing an easy to use interface
 
-## Recommended IDE Setup
+## How to use (developer)
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+Ensure you have FFmpeg and FFprobe installed as well as [Tauri dependencies](https://v2.tauri.app/start/prerequisites/)
+
+run
+```
+pnpm tauri dev
+```
+
+
+The project currently only runs on Linux
